@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>IoT Air Quality Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <style>
+    :root{--bg:#f3f4f6;--card:#fff;--muted:#6b7280;--accent:#0ea5a4}
+    html,body{height:100%;margin:0;font-family:Roboto,Arial,sans-serif;background:var(--bg);color:#111}
+    .login-bg{height:100vh;display:flex;align-items:center;justify-content:center;
+      background: linear-gradient(135deg,#e0f7fa 0%, #f3e8ff 50%, #fff7ed 100%);}
+    .box{background:rgba(255,255,255,0.96);padding:24px;border-radius:12px;
+      box-shadow:0 6px 24px rgba(10,10,10,0.08);width:360px;text-align:center}
+    input, select{width:90%;padding:8px;margin:8px 0;border:1px solid #ddd;border-radius:8px;font-size:15px}
+    .btn{background:var(--accent);color:#fff;padding:10px 14px;border-radius:8px;border:none;cursor:pointer;font-size:15px}
+    .link{color:var(--accent);font-size:14px;cursor:pointer;display:block;margin-top:8px}
+    .container{max-width:1200px;margin:14px auto;padding:14px;display:none}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}
+    h1{font-size:18px;margin:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    .logout{background:#ef4444;color:#fff;padding:8px;border-radius:8px;border:none;cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:12px}
+    .card{background:var(--card);padding:12px;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.06);text-align:center}
+    .metric-title{font-size:13px;color:var(--muted)}
+    .metric-value{font-size:22px;font-weight:700;margin-top:6px}
+    .small{font-size:12px;color:var(--muted)}
+    #map{height:320px;border-radius:8px;margin-top:8px}
+    footer{text-align:center;color:var(--muted);font-size:13px;margin-top:12px}
+    @media (max-width:800px){ .box{width:92%} }
+  </style>
+</head>
+<body>
+  <!-- LOGIN -->
+  <div class="login-bg" id="loginPage">
+    <div class="box">
+      <h2 style="color:var(--accent)">IoT Air Quality - Login</h2>
+      <input id="loginUser" placeholder="Username">
+      <input id="loginPass" type="password" placeholder="Password">
+      <button id="loginBtn" class="btn">Login</button>
+      <span id="showRegister" class="link">New user? Register</span>
+      <span id="showForgot" class="link">Forgot Password?</span>
+      <p class="small" style="margin-top:8px">Developed using ESP32 and IoT Cloud</p>
+    </div>
+  </div>
+
+  <!-- REGISTER -->
+  <div class="center" id="registerPage" style="display:none">
+    <div class="box">
+      <h2 style="color:var(--accent)">Register</h2>
+      <input id="regUser" placeholder="New username">
+      <input id="regPass" type="password" placeholder="New password">
+      <button id="regBtn" class="btn">Create Account</button>
+      <span id="backLogin1" class="link">Back to Login</span>
+    </div>
+  </div>
+
+  <!-- FORGOT -->
+  <div class="center" id="forgotPage" style="display:none">
+    <div class="box">
+      <h2 style="color:var(--accent)">Reset Password</h2>
+      <input id="fpUser" placeholder="Enter username">
+      <input id="fpPass" type="password" placeholder="New password">
+      <button id="fpBtn" class="btn">Reset</button>
+      <span id="backLogin2" class="link">Back to Login</span>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="container" id="dashboard" aria-hidden="true">
+    <header>
+      <div>
+        <h1>IoT Air Quality Dashboard</h1>
+        <div class="small">Live readings from ESP32 + GPS location</div>
+      </div>
+      <div class="controls">
+        <button id="refreshBtn" class="btn">Refresh</button>
+        <select id="interval">
+          <option value="5">5s</option>
+          <option value="15" selected>15s</option>
+          <option value="30">30s</option>
+          <option value="60">60s</option>
+        </select>
+        <button id="logoutBtn" class="logout">Logout</button>
+      </div>
+    </header>
+
+    <div class="card" style="margin-bottom:12px;text-align:left">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="flex:1"><label class="small">Country</label><br><select id="countrySel"></select></div>
+        <div style="flex:1"><label class="small">State</label><br><select id="stateSel"></select></div>
+        <div style="flex:1"><label class="small">District</label><br><select id="districtSel"></select></div>
+        <div style="flex:1"><label class="small">Place</label><br><select id="placeSel"></select></div>
+      </div>
+      <div class="small" style="margin-top:8px">Select an area (Country → State → District → Place)</div>
+    </div>
+
+    <div class="grid">
+      <div class="card"><div class="metric-title">Temperature (°C)</div><div id="temp" class="metric-value">--</div></div>
+      <div class="card"><div class="metric-title">Humidity (%)</div><div id="hum" class="metric-value">--</div></div>
+      <div class="card"><div class="metric-title">MQ-135 (raw)</div><div id="mq" class="metric-value">--</div></div>
+      <div class="card"><div class="metric-title">Air Quality Status</div><div id="status" class="metric-value">--</div></div>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:300px" class="card">
+        <div class="small">Device & Browser GPS Location</div>
+        <div id="map"></div>
+      </div>
+      <div style="flex:1;min-width:300px" class="card"><canvas id="chart" height="220"></canvas></div>
+    </div>
+    <footer>Developed using ESP32 and IoT Cloud</footer>
+  </div>
+
+<script>
+const THINGSPEAK_CHANNEL_ID = 'YOUR_CHANNEL_ID';
+const THINGSPEAK_READ_API_KEY = 'YOUR_READ_API_KEY';
+
+const areaData = {
+  "India": {
+    "Karnataka": {
+      "Bagalkot": {
+        "BEC Campus": {lat:16.1722, lon:75.6615},
+        "Navanagar": {lat:16.1798, lon:75.6981},
+        "Railway Station": {lat:16.1821, lon:75.6917}
+      },
+      "Belagavi": { "KLE Campus": {lat:16.8296,lon:74.6100}, "Belagavi City": {lat:15.8497,lon:74.4977} },
+      "Bengaluru Urban": { "MG Road": {lat:12.9737,lon:77.5966}, "Electronic City": {lat:12.8490,lon:77.6636} }
+    }
+  }
+};
+
+const defaultAdmin = { user:'admin', pass:'1234' };
+
+const loginPage = document.getElementById('loginPage');
+const registerPage = document.getElementById('registerPage');
+const forgotPage = document.getElementById('forgotPage');
+const dashboard = document.getElementById('dashboard');
+
+document.getElementById('showRegister').onclick = ()=>{ loginPage.style.display='none'; registerPage.style.display='flex'; };
+document.getElementById('showForgot').onclick = ()=>{ loginPage.style.display='none'; forgotPage.style.display='flex'; };
+document.getElementById('backLogin1').onclick = ()=>{ registerPage.style.display='none'; loginPage.style.display='flex'; };
+document.getElementById('backLogin2').onclick = ()=>{ forgotPage.style.display='none'; loginPage.style.display='flex'; };
+
+document.getElementById('regBtn').onclick = ()=>{
+  const u=document.getElementById('regUser').value.trim(), p=document.getElementById('regPass').value.trim();
+  if(!u||!p){ alert('Enter username & password'); return; }
+  localStorage.setItem('user:'+u,p); alert('Registered!');
+  registerPage.style.display='none'; loginPage.style.display='flex';
+};
+
+document.getElementById('fpBtn').onclick = ()=>{
+  const u=document.getElementById('fpUser').value.trim(), p=document.getElementById('fpPass').value.trim();
+  if(!localStorage.getItem('user:'+u)){ alert('User not found'); return; }
+  localStorage.setItem('user:'+u,p); alert('Password updated');
+  forgotPage.style.display='none'; loginPage.style.display='flex';
+};
+
+document.getElementById('loginBtn').onclick = ()=>{
+  const u=document.getElementById('loginUser').value.trim(), p=document.getElementById('loginPass').value.trim();
+  const stored = localStorage.getItem('user:'+u);
+  if((u===defaultAdmin.user && p===defaultAdmin.pass) || (stored && stored===p)){
+    loginPage.style.display='none'; dashboard.style.display='block'; initAll();
+  } else alert('Invalid credentials');
+};
+
+document.getElementById('logoutBtn').onclick = ()=>{ dashboard.style.display='none'; loginPage.style.display='flex'; if(pollTimer) clearInterval(pollTimer); };
+
+const countrySel=document.getElementById('countrySel'), stateSel=document.getElementById('stateSel'), districtSel=document.getElementById('districtSel'), placeSel=document.getElementById('placeSel');
+function populateCountries(){
+  countrySel.innerHTML='<option value="">--Country--</option>';
+  Object.keys(areaData).forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=c; countrySel.appendChild(o); });
+}
+countrySel.addEventListener('change', ()=>{ const c=countrySel.value; stateSel.innerHTML='<option>--State--</option>'; Object.keys(areaData[c]||{}).forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; stateSel.appendChild(o); }); });
+stateSel.addEventListener('change', ()=>{ const c=countrySel.value, s=stateSel.value; districtSel.innerHTML='<option>--District--</option>'; Object.keys(areaData[c][s]||{}).forEach(d=>{ const o=document.createElement('option'); o.value=d; o.textContent=d; districtSel.appendChild(o); }); });
+districtSel.addEventListener('change', ()=>{ const c=countrySel.value, s=stateSel.value, d=districtSel.value; placeSel.innerHTML='<option>--Place--</option>'; Object.keys(areaData[c][s][d]||{}).forEach(p=>{ const o=document.createElement('option'); o.value=p; o.textContent=p; placeSel.appendChild(o); }); });
+placeSel.addEventListener('change', ()=>{ const c=countrySel.value, s=stateSel.value, d=districtSel.value, p=placeSel.value; const coords=areaData[c][s][d][p]; if(coords && coords.lat && coords.lon) map.setView([coords.lat,coords.lon],13); });
+
+let map, chart, deviceMarker=null, userMarker=null, pollTimer=null;
+function setupMap(){ map=L.map('map').setView([20.5937,78.9629],5); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map); }
+function setupChart(){ const ctx=document.getElementById('chart').getContext('2d'); chart=new Chart(ctx,{type:'line',data:{labels:[],datasets:[{label:'Temp',data:[],borderColor:'red'},{label:'Humidity',data:[],borderColor:'blue'},{label:'MQ135',data:[],borderColor:'orange'}]},options:{responsive:true}}); }
+
+async function fetchData(){
+  try{
+    const res=await fetch(`https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds.json?api_key=${THINGSPEAK_READ_API_KEY}&results=1`);
+    const json=await res.json(); const f=json.feeds[0];
+    const t=parseFloat(f.field1), h=parseFloat(f.field2), mq=parseFloat(f.field3), lat=parseFloat(f.field4), lon=parseFloat(f.field5);
+    document.getElementById('temp').textContent=t; document.getElementById('hum').textContent=h; document.getElementById('mq').textContent=mq;
+    let s='--', c='gray'; if(mq<300){s='Good'; c='green';} else if(mq<700){s='Moderate'; c='orange';} else{s='Poor'; c='red';}
+    document.getElementById('status').textContent=s; document.getElementById('status').style.color=c;
+    chart.data.labels.push(new Date().toLocaleTimeString()); chart.data.datasets[0].data.push(t); chart.data.datasets[1].data.push(h); chart.data.datasets[2].data.push(mq);
+    if(chart.data.labels.length>30){ chart.data.labels.shift(); chart.data.datasets.forEach(d=>d.data.shift()); } chart.update();
+    if(lat && lon){ if(deviceMarker) deviceMarker.setLatLng([lat,lon]); else deviceMarker=L.marker([lat,lon]).addTo(map).bindPopup('Device (ESP32)'); }
+  }catch(e){ console.error(e); }
+}
+
+function setBrowserLocation(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {latitude,longitude}=pos.coords;
+    if(userMarker) userMarker.setLatLng([latitude,longitude]); else userMarker=L.marker([latitude,longitude]).addTo(map).bindPopup('You');
+  });
+}
+
+function initAll(){
+  populateCountries(); setupMap(); setupChart();
+  fetchData(); setBrowserLocation();
+  pollTimer=setInterval(()=>{ fetchData(); setBrowserLocation(); },15000);
+}
+</script>
+</body>
+</html>
